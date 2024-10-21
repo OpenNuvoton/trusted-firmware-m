@@ -13,6 +13,7 @@ add_executable(bl2
     src/security_cnt.c
     src/flash_map.c
     $<$<BOOL:${MCUBOOT_DATA_SHARING}>:src/shared_data.c>
+    $<$<BOOL:${CONFIG_GNU_SYSCALL_STUB_ENABLED}>:${CMAKE_SOURCE_DIR}/platform/ext/common/syscalls_stub.c>
 )
 
 add_subdirectory(ext/mcuboot)

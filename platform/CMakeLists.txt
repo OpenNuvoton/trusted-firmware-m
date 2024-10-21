@@ -179,3 +179,10 @@ if (TFM_PARTITION_CRYPTO)
             $<$<BOOL:${PLATFORM_DUMMY_NV_SEED}>:${CMAKE_CURRENT_SOURCE_DIR}/include>
     )
 endif()
+
+if(NS)
+    target_sources(tfm_ns
+        PRIVATE
+            $<$<BOOL:${CONFIG_GNU_SYSCALL_STUB_ENABLED}>:${CMAKE_SOURCE_DIR}/platform/ext/common/syscalls_stub.c>
+    )
+endif()
