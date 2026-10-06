@@ -153,10 +153,24 @@ psa_status_t m3351_transparent_cipher_update(
             return PSA_ERROR_BUFFER_TOO_SMALL;
         }
 
-        int ret = m3351_native_aes_crypt_ctr(&operation->native_ctx, input_length,
-                                             operation->iv, input, output);
-        if (ret != M3351_CRYPTO_SUCCESS) {
-            return m3351_cipher_to_psa_status(ret);
+        /* buffer holds the current keystream block, buffer_len its unused bytes */
+        for (size_t i = 0; i < input_length; i++) {
+            if (operation->buffer_len == 0) {
+                int ret = m3351_native_aes_crypt_ecb(&operation->native_ctx, 1,
+                                                     operation->iv,
+                                                     operation->buffer);
+                if (ret != M3351_CRYPTO_SUCCESS) {
+                    return m3351_cipher_to_psa_status(ret);
+                }
+                for (size_t k = 16; k > 0; k--) {
+                    if (++operation->iv[k - 1] != 0) {
+                        break;
+                    }
+                }
+                operation->buffer_len = 16;
+            }
+            output[i] = input[i] ^ operation->buffer[16 - operation->buffer_len];
+            operation->buffer_len--;
         }
         *output_length = input_length;
         return PSA_SUCCESS;

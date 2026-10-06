@@ -41,7 +41,20 @@ if(DEFINED PLATFORM_TF_PSA_CRYPTO_PATCH_DIR AND EXISTS ${PLATFORM_TF_PSA_CRYPTO_
             get_filename_component(PATCH_NAME ${PATCH} NAME)
 
             execute_process(
-                COMMAND ${GIT_EXECUTABLE} am --ignore-date ${PATCH}
+                COMMAND ${GIT_EXECUTABLE} apply --reverse --check ${PATCH}
+                WORKING_DIRECTORY ${TF_PSA_CRYPTO_PATH}
+                RESULT_VARIABLE PATCH_APPLIED_RESULT
+                OUTPUT_QUIET
+                ERROR_QUIET
+            )
+            if(PATCH_APPLIED_RESULT EQUAL 0)
+                message(STATUS "  ${PATCH_NAME} - already applied, skipping")
+                continue()
+            endif()
+
+            execute_process(
+                COMMAND ${GIT_EXECUTABLE} -c user.email=tf-m@noreply.local -c user.name=TFM
+                        am --ignore-date ${PATCH}
                 WORKING_DIRECTORY ${TF_PSA_CRYPTO_PATH}
                 RESULT_VARIABLE PATCH_RESULT
                 OUTPUT_QUIET

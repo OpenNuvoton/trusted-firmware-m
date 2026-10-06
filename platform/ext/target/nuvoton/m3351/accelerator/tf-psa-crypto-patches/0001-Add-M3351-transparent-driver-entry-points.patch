@@ -1,0 +1,352 @@
+From f92298f5d1f815cecb09ce02bc7172996e0a1e98 Mon Sep 17 00:00:00 2001
+From: Nuvoton <nuvoton@localhost>
+Date: Mon, 5 Oct 2026 14:58:58 +0800
+Subject: [PATCH] Add M3351 transparent driver entry points
+
+Dispatch SHA-224/256 and AES ECB/CBC/CTR to the M3351 crypto engine, falling back to the built-in implementation on PSA_ERROR_NOT_SUPPORTED.
+---
+ core/psa_crypto_driver_wrappers.h             | 173 ++++++++++++++++++
+ .../psa/crypto_driver_contexts_primitives.h   |  10 +
+ 2 files changed, 183 insertions(+)
+
+diff --git a/core/psa_crypto_driver_wrappers.h b/core/psa_crypto_driver_wrappers.h
+index b5496f7..1769995 100644
+--- a/core/psa_crypto_driver_wrappers.h
++++ b/core/psa_crypto_driver_wrappers.h
+@@ -71,6 +71,16 @@
+ #include "cc3xx.h"
+ #endif /* PSA_CRYPTO_DRIVER_CC3XX */
+ 
++#if defined(PSA_CRYPTO_DRIVER_M3351)
++#ifndef PSA_CRYPTO_DRIVER_PRESENT
++#define PSA_CRYPTO_DRIVER_PRESENT
++#endif
++#ifndef PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT
++#define PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT
++#endif
++#include "m3351_crypto_driver.h"
++#endif /* PSA_CRYPTO_DRIVER_M3351 */
++
+ /* END-driver headers */
+ 
+ /* Auto-generated values depending on which drivers are registered.
+@@ -88,6 +98,9 @@ enum {
+ #if defined(PSA_CRYPTO_DRIVER_CC3XX)
+     PSA_CRYPTO_CC3XX_DRIVER_ID,
+ #endif /* PSA_CRYPTO_DRIVER_CC3XX */
++#if defined(PSA_CRYPTO_DRIVER_M3351)
++    PSA_CRYPTO_M3351_DRIVER_ID,
++#endif /* PSA_CRYPTO_DRIVER_M3351 */
+ };
+ 
+ /* END-driver id */
+@@ -106,6 +119,12 @@ static inline psa_status_t psa_driver_wrapper_init( void )
+         return ( status );
+ #endif
+ 
++#if defined(PSA_CRYPTO_DRIVER_M3351)
++    status = m3351_crypto_init();
++    if (status != PSA_SUCCESS)
++        return ( status );
++#endif
++
+ #if defined(PSA_CRYPTO_DRIVER_TFM_BUILTIN_KEY_LOADER)
+     status = tfm_builtin_key_loader_init();
+     if (status != PSA_SUCCESS)
+@@ -136,6 +155,10 @@ static inline void psa_driver_wrapper_free( void )
+ #if defined(PSA_CRYPTO_DRIVER_CC3XX)
+     (void)cc3xx_free();
+ #endif
++
++#if defined(PSA_CRYPTO_DRIVER_M3351)
++    (void)m3351_crypto_free();
++#endif
+ }
+ 
+ /* Start delegation functions */
+@@ -1109,6 +1132,22 @@ static inline psa_status_t psa_driver_wrapper_cipher_encrypt(
+                                            output_length );
+             return( status );
+ #endif /* PSA_CRYPTO_DRIVER_CC3XX */
++#if defined(PSA_CRYPTO_DRIVER_M3351)
++            status = m3351_transparent_cipher_encrypt( attributes,
++                                                       key_buffer,
++                                                       key_buffer_size,
++                                                       alg,
++                                                       iv,
++                                                       iv_length,
++                                                       input,
++                                                       input_length,
++                                                       output,
++                                                       output_size,
++                                                       output_length );
++            /* Declared with fallback == true */
++            if( status != PSA_ERROR_NOT_SUPPORTED )
++                return( status );
++#endif /* PSA_CRYPTO_DRIVER_M3351 */
+ #endif /* PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT */
+ 
+ #if defined(MBEDTLS_PSA_BUILTIN_CIPHER)
+@@ -1212,6 +1251,20 @@ static inline psa_status_t psa_driver_wrapper_cipher_decrypt(
+                                            output_length );
+             return( status );
+ #endif /* PSA_CRYPTO_DRIVER_CC3XX */
++#if defined(PSA_CRYPTO_DRIVER_M3351)
++            status = m3351_transparent_cipher_decrypt( attributes,
++                                                       key_buffer,
++                                                       key_buffer_size,
++                                                       alg,
++                                                       input,
++                                                       input_length,
++                                                       output,
++                                                       output_size,
++                                                       output_length );
++            /* Declared with fallback == true */
++            if( status != PSA_ERROR_NOT_SUPPORTED )
++                return( status );
++#endif /* PSA_CRYPTO_DRIVER_M3351 */
+ #endif /* PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT */
+ 
+ #if defined(MBEDTLS_PSA_BUILTIN_CIPHER)
+@@ -1302,6 +1355,20 @@ static inline psa_status_t psa_driver_wrapper_cipher_encrypt_setup(
+             operation->id = PSA_CRYPTO_CC3XX_DRIVER_ID;
+             return( status );
+ #endif /* PSA_CRYPTO_DRIVER_CC3XX */
++#if defined(PSA_CRYPTO_DRIVER_M3351)
++            status = m3351_transparent_cipher_encrypt_setup(
++                &operation->ctx.m3351_driver_ctx,
++                attributes,
++                key_buffer,
++                key_buffer_size,
++                alg );
++            /* Declared with fallback == true */
++            if( status == PSA_SUCCESS )
++                operation->id = PSA_CRYPTO_M3351_DRIVER_ID;
++
++            if( status != PSA_ERROR_NOT_SUPPORTED )
++                return( status );
++#endif /* PSA_CRYPTO_DRIVER_M3351 */
+ #endif /* PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT */
+ #if defined(MBEDTLS_PSA_BUILTIN_CIPHER)
+             /* Fell through, meaning no accelerator supports this operation */
+@@ -1391,6 +1458,20 @@ static inline psa_status_t psa_driver_wrapper_cipher_decrypt_setup(
+             operation->id = PSA_CRYPTO_CC3XX_DRIVER_ID;
+             return( status );
+ #endif /* PSA_CRYPTO_DRIVER_CC3XX */
++#if defined(PSA_CRYPTO_DRIVER_M3351)
++            status = m3351_transparent_cipher_decrypt_setup(
++                &operation->ctx.m3351_driver_ctx,
++                attributes,
++                key_buffer,
++                key_buffer_size,
++                alg );
++            /* Declared with fallback == true */
++            if( status == PSA_SUCCESS )
++                operation->id = PSA_CRYPTO_M3351_DRIVER_ID;
++
++            if( status != PSA_ERROR_NOT_SUPPORTED )
++                return( status );
++#endif /* PSA_CRYPTO_DRIVER_M3351 */
+ #endif /* PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT */
+ #if defined(MBEDTLS_PSA_BUILTIN_CIPHER)
+             /* Fell through, meaning no accelerator supports this operation */
+@@ -1466,6 +1547,12 @@ static inline psa_status_t psa_driver_wrapper_cipher_set_iv(
+                         &operation->ctx.cc3xx_driver_ctx,
+                         iv, iv_length ) );
+ #endif /* PSA_CRYPTO_DRIVER_CC3XX */
++#if defined(PSA_CRYPTO_DRIVER_M3351)
++        case PSA_CRYPTO_M3351_DRIVER_ID:
++            return( m3351_transparent_cipher_set_iv(
++                        &operation->ctx.m3351_driver_ctx,
++                        iv, iv_length ) );
++#endif /* PSA_CRYPTO_DRIVER_M3351 */
+ #endif /* PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT */
+     }
+ 
+@@ -1516,6 +1603,13 @@ static inline psa_status_t psa_driver_wrapper_cipher_update(
+                         input, input_length,
+                         output, output_size, output_length ) );
+ #endif /* PSA_CRYPTO_DRIVER_CC3XX */
++#if defined(PSA_CRYPTO_DRIVER_M3351)
++        case PSA_CRYPTO_M3351_DRIVER_ID:
++            return( m3351_transparent_cipher_update(
++                        &operation->ctx.m3351_driver_ctx,
++                        input, input_length,
++                        output, output_size, output_length ) );
++#endif /* PSA_CRYPTO_DRIVER_M3351 */
+ #endif /* PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT */
+     }
+ 
+@@ -1562,6 +1656,12 @@ static inline psa_status_t psa_driver_wrapper_cipher_finish(
+                         &operation->ctx.cc3xx_driver_ctx,
+                         output, output_size, output_length ) );
+ #endif /* PSA_CRYPTO_DRIVER_CC3XX*/
++#if defined(PSA_CRYPTO_DRIVER_M3351)
++        case PSA_CRYPTO_M3351_DRIVER_ID:
++            return( m3351_transparent_cipher_finish(
++                        &operation->ctx.m3351_driver_ctx,
++                        output, output_size, output_length ) );
++#endif /* PSA_CRYPTO_DRIVER_M3351 */
+ #endif /* PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT */
+     }
+ 
+@@ -1611,6 +1711,15 @@ static inline psa_status_t psa_driver_wrapper_cipher_abort(
+                 sizeof( operation->ctx.cc3xx_driver_ctx ) );
+             return( status );
+ #endif /* PSA_CRYPTO_DRIVER_CC3XX */
++#if defined(PSA_CRYPTO_DRIVER_M3351)
++        case PSA_CRYPTO_M3351_DRIVER_ID:
++            status = m3351_transparent_cipher_abort(
++                         &operation->ctx.m3351_driver_ctx );
++            mbedtls_platform_zeroize(
++                &operation->ctx.m3351_driver_ctx,
++                sizeof( operation->ctx.m3351_driver_ctx ) );
++            return( status );
++#endif /* PSA_CRYPTO_DRIVER_M3351 */
+ #endif /* PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT */
+     }
+ 
+@@ -1649,6 +1758,13 @@ static inline psa_status_t psa_driver_wrapper_hash_compute(
+     return( status );
+ #endif /* defined(PSA_WANT_ALG_SHA_384) || defined(PSA_WANT_ALG_SHA_512) */
+ #endif /* PSA_CRYPTO_DRIVER_CC3XX */
++#if defined(PSA_CRYPTO_DRIVER_M3351)
++    status = m3351_transparent_hash_compute( alg, input, input_length,
++                                             hash, hash_size, hash_length );
++    /* Declared with fallback == true */
++    if( status != PSA_ERROR_NOT_SUPPORTED )
++        return( status );
++#endif /* PSA_CRYPTO_DRIVER_M3351 */
+ #endif /* PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT */
+ 
+     /* If software fallback is compiled in, try fallback */
+@@ -1696,6 +1812,15 @@ static inline psa_status_t psa_driver_wrapper_hash_setup(
+     return( status );
+ #endif /* defined(PSA_WANT_ALG_SHA_384) || defined(PSA_WANT_ALG_SHA_512) */
+ #endif /* PSA_CRYPTO_DRIVER_CC3XX */
++#if defined(PSA_CRYPTO_DRIVER_M3351)
++    status = m3351_transparent_hash_setup( &operation->ctx.m3351_driver_ctx, alg );
++    /* Declared with fallback == true */
++    if( status == PSA_SUCCESS )
++        operation->id = PSA_CRYPTO_M3351_DRIVER_ID;
++
++    if( status != PSA_ERROR_NOT_SUPPORTED )
++        return( status );
++#endif /* PSA_CRYPTO_DRIVER_M3351 */
+ #endif /* PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT */
+ 
+     /* If software fallback is compiled in, try fallback */
+@@ -1742,6 +1867,37 @@ static inline psa_status_t psa_driver_wrapper_hash_clone(
+                         &target_operation->ctx.cc3xx_driver_ctx ) );
+ 
+ #endif /* PSA_CRYPTO_DRIVER_CC3XX */
++#if defined(PSA_CRYPTO_DRIVER_M3351)
++        case PSA_CRYPTO_M3351_DRIVER_ID:
++#if defined(MBEDTLS_PSA_BUILTIN_HASH)
++        {
++            /* The SHA engine holds a single streaming state, so the clone continues in software */
++            const m3351_hash_operation_t *src =
++                &source_operation->ctx.m3351_driver_ctx;
++            psa_status_t status;
++
++            if( !src->native_ctx.first )
++                return( PSA_ERROR_NOT_SUPPORTED );
++
++            status = mbedtls_psa_hash_setup(
++                        &target_operation->ctx.mbedtls_ctx, src->alg );
++            if( status == PSA_SUCCESS )
++                status = mbedtls_psa_hash_update(
++                            &target_operation->ctx.mbedtls_ctx,
++                            src->native_ctx.buffer,
++                            src->native_ctx.buffer_len );
++            if( status != PSA_SUCCESS )
++            {
++                (void) mbedtls_psa_hash_abort( &target_operation->ctx.mbedtls_ctx );
++                return( status );
++            }
++            target_operation->id = PSA_CRYPTO_MBED_TLS_DRIVER_ID;
++            return( PSA_SUCCESS );
++        }
++#else
++            return( PSA_ERROR_NOT_SUPPORTED );
++#endif /* MBEDTLS_PSA_BUILTIN_HASH */
++#endif /* PSA_CRYPTO_DRIVER_M3351 */
+ #endif /* PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT */
+         default:
+             (void) target_operation;
+@@ -1774,6 +1930,12 @@ static inline psa_status_t psa_driver_wrapper_hash_update(
+                         &operation->ctx.cc3xx_driver_ctx,
+                         input, input_length ) );
+ #endif /* PSA_CRYPTO_DRIVER_CC3XX */
++#if defined(PSA_CRYPTO_DRIVER_M3351)
++        case PSA_CRYPTO_M3351_DRIVER_ID:
++            return( m3351_transparent_hash_update(
++                        &operation->ctx.m3351_driver_ctx,
++                        input, input_length ) );
++#endif /* PSA_CRYPTO_DRIVER_M3351 */
+ #endif /* PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT */
+         default:
+             (void) input;
+@@ -1808,6 +1970,12 @@ static inline psa_status_t psa_driver_wrapper_hash_finish(
+                         &operation->ctx.cc3xx_driver_ctx,
+                         hash, hash_size, hash_length ) );
+ #endif /* PSA_CRYPTO_DRIVER_CC3XX */
++#if defined(PSA_CRYPTO_DRIVER_M3351)
++        case PSA_CRYPTO_M3351_DRIVER_ID:
++            return( m3351_transparent_hash_finish(
++                        &operation->ctx.m3351_driver_ctx,
++                        hash, hash_size, hash_length ) );
++#endif /* PSA_CRYPTO_DRIVER_M3351 */
+ #endif /* PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT */
+         default:
+             (void) hash;
+@@ -1837,6 +2005,11 @@ static inline psa_status_t psa_driver_wrapper_hash_abort(
+             return( cc3xx_hash_abort(
+                         &operation->ctx.cc3xx_driver_ctx ) );
+ #endif /* PSA_CRYPTO_DRIVER_CC3XX */
++#if defined(PSA_CRYPTO_DRIVER_M3351)
++        case PSA_CRYPTO_M3351_DRIVER_ID:
++            return( m3351_transparent_hash_abort(
++                        &operation->ctx.m3351_driver_ctx ) );
++#endif /* PSA_CRYPTO_DRIVER_M3351 */
+ #endif /* PSA_CRYPTO_ACCELERATOR_DRIVER_PRESENT */
+         default:
+             return( PSA_ERROR_BAD_STATE );
+diff --git a/include/psa/crypto_driver_contexts_primitives.h b/include/psa/crypto_driver_contexts_primitives.h
+index b2d1e9a..995a0a2 100644
+--- a/include/psa/crypto_driver_contexts_primitives.h
++++ b/include/psa/crypto_driver_contexts_primitives.h
+@@ -35,6 +35,10 @@
+ #include "cc3xx_crypto_primitives_private.h"
+ #endif /* PSA_CRYPTO_DRIVER_CC3XX */
+ 
++#if defined(PSA_CRYPTO_DRIVER_M3351)
++#include "m3351_crypto_primitives.h"
++#endif /* PSA_CRYPTO_DRIVER_M3351 */
++
+ #if defined(MBEDTLS_TEST_LIBTESTDRIVER1)
+ #if defined(TF_PSA_CRYPTO_TEST_LIBTESTDRIVER1)
+ #include "mbedtls/private/libtestdriver1-crypto_builtin_primitives.h"
+@@ -119,6 +123,9 @@ typedef union {
+ #if defined(PSA_CRYPTO_DRIVER_CC3XX)
+     cc3xx_hash_operation_t cc3xx_driver_ctx;
+ #endif
++#if defined(PSA_CRYPTO_DRIVER_M3351)
++    m3351_hash_operation_t m3351_driver_ctx;
++#endif
+ } psa_driver_hash_context_t;
+ 
+ typedef union {
+@@ -139,6 +146,9 @@ typedef union {
+ #if defined(PSA_CRYPTO_DRIVER_CC3XX)
+     cc3xx_cipher_operation_t cc3xx_driver_ctx;
+ #endif
++#if defined(PSA_CRYPTO_DRIVER_M3351)
++    m3351_cipher_operation_t m3351_driver_ctx;
++#endif
+ } psa_driver_cipher_context_t;
+ 
+ #endif /* PSA_CRYPTO_DRIVER_CONTEXTS_PRIMITIVES_H */
+-- 
+2.45.2.windows.1
+

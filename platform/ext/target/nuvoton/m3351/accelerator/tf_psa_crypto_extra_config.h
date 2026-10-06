@@ -15,8 +15,15 @@ extern "C" {
 /* Enable M3351 Hardware Crypto Driver in PSA Crypto Core */
 #define PSA_CRYPTO_DRIVER_M3351 1
 
-/* No MBEDTLS_PSA_ACCEL_* here: the m3351 driver is not in the generated PSA dispatch,
- * so declaring them would remove the built-in SHA-256/AES and break psa_crypto_init(). */
+/* Acceleration capabilities */
+/* No SHA ACCEL: the SHA engine holds one streaming state, so overlapping hashes
+ * (e.g. the entropy accumulator during psa_crypto_init) need the built-in SHA-256. */
+
+#define MBEDTLS_PSA_ACCEL_KEY_TYPE_AES
+#define MBEDTLS_PSA_ACCEL_ALG_ECB_NO_PADDING
+#define MBEDTLS_PSA_ACCEL_ALG_CBC_NO_PADDING
+#define MBEDTLS_PSA_ACCEL_ALG_CBC_PKCS7
+#define MBEDTLS_PSA_ACCEL_ALG_CTR
 
 #ifdef __cplusplus
 }

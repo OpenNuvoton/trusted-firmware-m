@@ -34,7 +34,7 @@
                 "PSA_KEY_TYPE_AES"
             ],
             "key_sizes": [128, 192, 256],
-            "fallback": false
+            "fallback": true
         }
     ]
 }
