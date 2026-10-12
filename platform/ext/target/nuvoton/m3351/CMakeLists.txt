@@ -196,6 +196,7 @@ if(M3351_CRYPTO_HW_ACCELERATOR)
             accelerator/m3351_crypto_native.c
             accelerator/m3351_crypto_hash.c
             accelerator/m3351_crypto_cipher.c
+            accelerator/m3351_entropy.c
     )
     target_include_directories(platform_s
         PUBLIC

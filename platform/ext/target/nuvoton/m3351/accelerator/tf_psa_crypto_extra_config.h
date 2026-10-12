@@ -26,6 +26,12 @@ extern "C" {
 #define MBEDTLS_PSA_ACCEL_ALG_CTR
 #define MBEDTLS_PSA_CRYPTO_RNG_HASH PSA_ALG_SHA_512
 
+/* TRNG entropy (m3351_entropy.c); runtime only, BL2 includes this file via
+ * TF_PSA_CRYPTO_ACCELERATOR_CONFIG_FILE and has no TRNG source linked. */
+#if !defined(TF_PSA_CRYPTO_ACCELERATOR_CONFIG_FILE)
+#define MBEDTLS_PSA_DRIVER_GET_ENTROPY
+#endif
+
 #ifdef __cplusplus
 }
 #endif
