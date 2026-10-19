@@ -330,5 +330,9 @@ install(DIRECTORY   ${TARGET_PLATFORM_PATH}/tests
         DESTINATION ${INSTALL_PLATFORM_NS_DIR})
 
 install(FILES       ${TARGET_PLATFORM_PATH}/tfm_builtin_key_ids.h
+                    ${TARGET_PLATFORM_PATH}/services/include/tfm_platform_hal_ioctl.h
         DESTINATION ${INSTALL_INTERFACE_INC_DIR})
+
+install(FILES       ${TARGET_PLATFORM_PATH}/services/src/tfm_platform_hal_ioctl.c
+        DESTINATION ${INSTALL_INTERFACE_SRC_DIR})
 
