@@ -88,6 +88,8 @@ int m3351_native_aes_crypt_ecb(m3351_native_aes_ctx_t *ctx, int mode,
                                const uint8_t input[16], uint8_t output[16]);
 int m3351_native_aes_crypt_cbc(m3351_native_aes_ctx_t *ctx, int mode, size_t length,
                                uint8_t iv[16], const uint8_t *input, uint8_t *output);
+int m3351_native_aes_crypt_cfb128(m3351_native_aes_ctx_t *ctx, int mode, size_t length,
+                                  uint8_t iv[16], const uint8_t *input, uint8_t *output);
 int m3351_native_aes_crypt_ctr(m3351_native_aes_ctx_t *ctx, size_t length,
                                uint8_t nonce_counter[16], const uint8_t *input,
                                uint8_t *output);

@@ -29,7 +29,24 @@ static bool m3351_is_supported_cipher_alg(psa_algorithm_t alg)
     return (alg == PSA_ALG_ECB_NO_PADDING ||
             alg == PSA_ALG_CBC_NO_PADDING ||
             alg == PSA_ALG_CBC_PKCS7 ||
-            alg == PSA_ALG_CTR);
+            alg == PSA_ALG_CTR ||
+            alg == PSA_ALG_CFB);
+}
+
+/* buffer holds E(iv) keystream; consumed bytes are replaced in iv by ciphertext */
+static void m3351_cfb_consume_keystream(m3351_cipher_operation_t *operation,
+                                        const uint8_t *input, uint8_t *output,
+                                        size_t length)
+{
+    for (size_t i = 0; i < length; i++) {
+        size_t pos = 16 - operation->buffer_len;
+        uint8_t in_byte = input[i];
+        uint8_t out_byte = in_byte ^ operation->buffer[pos];
+
+        output[i] = out_byte;
+        operation->iv[pos] = operation->enc_dec ? out_byte : in_byte;
+        operation->buffer_len--;
+    }
 }
 
 psa_status_t m3351_transparent_cipher_encrypt_setup(
@@ -172,6 +189,50 @@ psa_status_t m3351_transparent_cipher_update(
             output[i] = input[i] ^ operation->buffer[16 - operation->buffer_len];
             operation->buffer_len--;
         }
+        *output_length = input_length;
+        return PSA_SUCCESS;
+    }
+
+    if (operation->alg == PSA_ALG_CFB) {
+        size_t ofs = 0;
+        size_t n;
+        int ret;
+
+        if (output_size < input_length) {
+            return PSA_ERROR_BUFFER_TOO_SMALL;
+        }
+
+        if (operation->buffer_len > 0) {
+            n = (input_length < operation->buffer_len) ? input_length
+                                                       : operation->buffer_len;
+            m3351_cfb_consume_keystream(operation, input, output, n);
+            ofs = n;
+        }
+
+        n = ((input_length - ofs) / 16) * 16;
+        if (n > 0) {
+            ret = m3351_native_aes_crypt_cfb128(&operation->native_ctx,
+                                                operation->enc_dec, n,
+                                                operation->iv,
+                                                &input[ofs], &output[ofs]);
+            if (ret != M3351_CRYPTO_SUCCESS) {
+                return m3351_cipher_to_psa_status(ret);
+            }
+            ofs += n;
+        }
+
+        if (ofs < input_length) {
+            /* HW CFB is 128-bit segment only; tail uses E(iv) from ECB */
+            ret = m3351_native_aes_crypt_ecb(&operation->native_ctx, 1,
+                                             operation->iv, operation->buffer);
+            if (ret != M3351_CRYPTO_SUCCESS) {
+                return m3351_cipher_to_psa_status(ret);
+            }
+            operation->buffer_len = 16;
+            m3351_cfb_consume_keystream(operation, &input[ofs], &output[ofs],
+                                        input_length - ofs);
+        }
+
         *output_length = input_length;
         return PSA_SUCCESS;
     }
@@ -353,7 +414,7 @@ psa_status_t m3351_transparent_cipher_finish(
 
     *output_length = 0;
 
-    if (operation->alg == PSA_ALG_CTR) {
+    if (operation->alg == PSA_ALG_CTR || operation->alg == PSA_ALG_CFB) {
         memset(operation, 0, sizeof(m3351_cipher_operation_t));
         return PSA_SUCCESS;
     }

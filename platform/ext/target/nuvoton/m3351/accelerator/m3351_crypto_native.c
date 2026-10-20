@@ -13,9 +13,12 @@
 #define M3351_CRYPTO_TIMEOUT_CNT  (0x100000)
 
 
+/* Must be a multiple of M3351_AES_BLOCK_SIZE */
+#define M3351_AES_BOUNCE_SIZE     (256U)
+
 /* Internal aligned bounce buffer for AES DMA transfers */
-__attribute__((aligned(4))) static uint8_t s_aes_dma_in[M3351_AES_BLOCK_SIZE];
-__attribute__((aligned(4))) static uint8_t s_aes_dma_out[M3351_AES_BLOCK_SIZE];
+__attribute__((aligned(4))) static uint8_t s_aes_dma_in[M3351_AES_BOUNCE_SIZE];
+__attribute__((aligned(4))) static uint8_t s_aes_dma_out[M3351_AES_BOUNCE_SIZE];
 
 static inline const uint8_t *m3351_remap_ns_flash_ptr(const uint8_t *ptr)
 {
@@ -400,8 +403,28 @@ int m3351_native_aes_setkey(m3351_native_aes_ctx_t *ctx, const uint8_t *key, siz
     return M3351_CRYPTO_SUCCESS;
 }
 
-static int m3351_aes_crypt_raw_block(m3351_native_aes_ctx_t *ctx,
-                                     const uint8_t input[16], uint8_t output[16])
+/* DMA can only write to SRAM */
+static inline bool m3351_is_dma_writable(const void *addr, size_t len, uint32_t *dma_addr)
+{
+    uintptr_t start = (uintptr_t)addr;
+    uintptr_t end = start + len;
+
+    if (addr == NULL || len == 0 || (start & 0x3) != 0 || end < start) {
+        return false;
+    }
+
+    if ((start >= 0x20000000UL && end <= 0x20040000UL) ||
+        (start >= 0x30000000UL && end <= 0x30040000UL)) {
+        *dma_addr = (uint32_t)start;
+        return true;
+    }
+
+    return false;
+}
+
+/* One-shot DMA of len bytes (multiple of 16) starting from ctx->iv */
+static int m3351_aes_dma_oneshot(m3351_native_aes_ctx_t *ctx,
+                                 uint32_t src, uint32_t dst, uint32_t len)
 {
     int32_t timeout;
     uint32_t wcnt, i;
@@ -411,9 +434,6 @@ static int m3351_aes_crypt_raw_block(m3351_native_aes_ctx_t *ctx,
 
     /* Force AES stop */
     CRYPTO->AES_CTL = CRYPTO_AES_CTL_STOP_Msk;
-
-    /* Copy to word-aligned DMA input buffer */
-    memcpy(s_aes_dma_in, input, M3351_AES_BLOCK_SIZE);
 
     /* Set AES control */
     CRYPTO->AES_CTL = ctx->enc_dec | ctx->op_mode | ctx->key_size_op |
@@ -433,29 +453,48 @@ static int m3351_aes_crypt_raw_block(m3351_native_aes_ctx_t *ctx,
     }
 
     /* Set DMA source, destination and length */
-    CRYPTO->AES_SADDR = (uint32_t)s_aes_dma_in;
-    CRYPTO->AES_DADDR = (uint32_t)s_aes_dma_out;
-    CRYPTO->AES_CNT = M3351_AES_BLOCK_SIZE;
+    CRYPTO->AES_SADDR = src;
+    CRYPTO->AES_DADDR = dst;
+    CRYPTO->AES_CNT = len;
 
-    /* Clear finish flag */
-    CRYPTO->INTSTS = CRYPTO_INTSTS_AESIF_Msk;
+    /* Clear finish and error flags */
+    CRYPTO->INTSTS = CRYPTO_INTSTS_AESIF_Msk | CRYPTO_INTSTS_AESEIF_Msk;
 
-    /* Start AES engine */
-    CRYPTO->AES_CTL |= CRYPTO_AES_CTL_START_Msk;
+    /* Start AES engine as a single (last) DMA round */
+    CRYPTO->AES_CTL |= CRYPTO_AES_CTL_START_Msk | CRYPTO_AES_CTL_DMALAST_Msk;
 
-    timeout = M3351_CRYPTO_TIMEOUT_CNT;
+    timeout = M3351_CRYPTO_TIMEOUT_CNT + (int32_t)(len * 16U);
     while ((CRYPTO->INTSTS & CRYPTO_INTSTS_AESIF_Msk) == 0) {
         if (--timeout <= 0) {
+            CRYPTO->AES_CTL = CRYPTO_AES_CTL_STOP_Msk;
             return M3351_CRYPTO_ERR_TIMEOUT;
         }
     }
 
+    if (CRYPTO->INTSTS & CRYPTO_INTSTS_AESEIF_Msk) {
+        CRYPTO->INTSTS = CRYPTO_INTSTS_AESIF_Msk | CRYPTO_INTSTS_AESEIF_Msk;
+        return M3351_CRYPTO_ERR_HW;
+    }
+
     CRYPTO->INTSTS = CRYPTO_INTSTS_AESIF_Msk;
 
-    /* Copy result from word-aligned DMA output buffer */
-    memcpy(output, s_aes_dma_out, M3351_AES_BLOCK_SIZE);
-
     return M3351_CRYPTO_SUCCESS;
+}
+
+static int m3351_aes_crypt_raw_block(m3351_native_aes_ctx_t *ctx,
+                                     const uint8_t input[16], uint8_t output[16])
+{
+    int ret;
+
+    memcpy(s_aes_dma_in, input, M3351_AES_BLOCK_SIZE);
+
+    ret = m3351_aes_dma_oneshot(ctx, (uint32_t)s_aes_dma_in, (uint32_t)s_aes_dma_out,
+                                M3351_AES_BLOCK_SIZE);
+    if (ret == M3351_CRYPTO_SUCCESS) {
+        memcpy(output, s_aes_dma_out, M3351_AES_BLOCK_SIZE);
+    }
+
+    return ret;
 }
 
 int m3351_native_aes_crypt_ecb(m3351_native_aes_ctx_t *ctx, int mode,
@@ -525,6 +564,88 @@ int m3351_native_aes_crypt_cbc(m3351_native_aes_ctx_t *ctx, int mode, size_t len
     }
 
     /* Save updated IV */
+    nu_set32_le(iv, ctx->iv[0]);
+    nu_set32_le(iv + 4, ctx->iv[1]);
+    nu_set32_le(iv + 8, ctx->iv[2]);
+    nu_set32_le(iv + 12, ctx->iv[3]);
+
+    return M3351_CRYPTO_SUCCESS;
+}
+
+int m3351_native_aes_crypt_cfb128(m3351_native_aes_ctx_t *ctx, int mode, size_t length,
+                                  uint8_t iv[16], const uint8_t *input, uint8_t *output)
+{
+    uint8_t last_ct[16];
+    uint32_t src, dst;
+    bool direct;
+    size_t n;
+    int ret = M3351_CRYPTO_SUCCESS;
+
+    if (ctx == NULL || iv == NULL || input == NULL || output == NULL) {
+        return M3351_CRYPTO_ERR_PARAM;
+    }
+
+    if ((length % M3351_AES_BLOCK_SIZE) != 0) {
+        return M3351_CRYPTO_ERR_PARAM;
+    }
+
+    ctx->enc_dec = mode ? CRYPTO_AES_CTL_ENCRYPTO_Msk : 0;
+    ctx->op_mode = (AES_MODE_CFB << CRYPTO_AES_CTL_OPMODE_Pos);
+
+    ctx->iv[0] = nu_get32_le(iv);
+    ctx->iv[1] = nu_get32_le(iv + 4);
+    ctx->iv[2] = nu_get32_le(iv + 8);
+    ctx->iv[3] = nu_get32_le(iv + 12);
+
+    direct = m3351_is_dma_accessible(input, length, &src) &&
+             m3351_is_dma_writable(output, length, &dst);
+
+    while (length > 0) {
+        n = direct ? length
+                   : ((length > M3351_AES_BOUNCE_SIZE) ? M3351_AES_BOUNCE_SIZE : length);
+
+        /* Next IV is the last ciphertext block; save it before in-place decryption */
+        if (!mode) {
+            memcpy(last_ct, input + n - M3351_AES_BLOCK_SIZE, M3351_AES_BLOCK_SIZE);
+        }
+
+        if (direct) {
+            ret = m3351_aes_dma_oneshot(ctx, src, dst, (uint32_t)n);
+        } else {
+            memcpy(s_aes_dma_in, input, n);
+            ret = m3351_aes_dma_oneshot(ctx, (uint32_t)s_aes_dma_in,
+                                        (uint32_t)s_aes_dma_out, (uint32_t)n);
+            if (ret == M3351_CRYPTO_SUCCESS) {
+                memcpy(output, s_aes_dma_out, n);
+            }
+        }
+        if (ret != M3351_CRYPTO_SUCCESS) {
+            break;
+        }
+
+        if (mode) {
+            memcpy(last_ct, output + n - M3351_AES_BLOCK_SIZE, M3351_AES_BLOCK_SIZE);
+        }
+        ctx->iv[0] = nu_get32_le(last_ct);
+        ctx->iv[1] = nu_get32_le(last_ct + 4);
+        ctx->iv[2] = nu_get32_le(last_ct + 8);
+        ctx->iv[3] = nu_get32_le(last_ct + 12);
+
+        length -= n;
+        input  += n;
+        output += n;
+    }
+
+    if (!direct) {
+        memset(s_aes_dma_in, 0, sizeof(s_aes_dma_in));
+        memset(s_aes_dma_out, 0, sizeof(s_aes_dma_out));
+    }
+    memset(last_ct, 0, sizeof(last_ct));
+
+    if (ret != M3351_CRYPTO_SUCCESS) {
+        return ret;
+    }
+
     nu_set32_le(iv, ctx->iv[0]);
     nu_set32_le(iv + 4, ctx->iv[1]);
     nu_set32_le(iv + 8, ctx->iv[2]);
