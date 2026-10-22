@@ -74,9 +74,7 @@ void SystemInit(void)
 #endif
 
 #if defined(BL2)
-    /* Enable PLL */
-    CLK->PLLCTL ^= CLK_PLLCTL_PD_Msk;
-    CLK->CLKSEL0 = (CLK->CLKSEL0 & ~CLK_CLKSEL0_HCLKSEL_Msk) | CLK_CLKSEL0_HCLKSEL_PLL;
+    /* Core clock (PLL 144 MHz) is already set up by Reset_Handler_PreInit(). */
 
     /* Init UART0 to non-secure region */
     SCU_SET_PNSSET(UART0_Attr);

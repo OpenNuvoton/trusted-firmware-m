@@ -226,17 +226,12 @@ if(M3351_CRYPTO_HW_ACCELERATOR)
             PUBLIC
                 CRYPTO_HW_ACCELERATOR
                 PSA_CRYPTO_DRIVER_M3351
-                MCUBOOT_HASH_STORAGE_DIRECTLY
         )
-        target_compile_definitions(bootutil
-            PRIVATE
-                MCUBOOT_HASH_STORAGE_DIRECTLY
-        )
+        # No MCUBOOT_HASH_STORAGE_DIRECTLY: NS slot is not readable via the Secure flash alias.
         target_compile_definitions(bl2_crypto_config
             INTERFACE
                 CRYPTO_HW_ACCELERATOR
                 PSA_CRYPTO_DRIVER_M3351
-                MCUBOOT_HASH_STORAGE_DIRECTLY
                 TF_PSA_CRYPTO_ACCELERATOR_CONFIG_FILE="${CMAKE_CURRENT_SOURCE_DIR}/accelerator/tf_psa_crypto_extra_config.h"
         )
         target_include_directories(bl2_crypto_config
