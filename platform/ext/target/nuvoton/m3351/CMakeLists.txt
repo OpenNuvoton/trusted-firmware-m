@@ -227,7 +227,12 @@ if(M3351_CRYPTO_HW_ACCELERATOR)
                 CRYPTO_HW_ACCELERATOR
                 PSA_CRYPTO_DRIVER_M3351
         )
-        # No MCUBOOT_HASH_STORAGE_DIRECTLY: NS slot is not readable via the Secure flash alias.
+        # Hash images straight from flash. NS slots (>= SCU->FNSADDR) are read as zero via
+        # the Secure alias; the M3351 SHA driver remaps them to the NS alias (0x10000000).
+        target_compile_definitions(bootutil
+            PRIVATE
+                MCUBOOT_HASH_STORAGE_DIRECTLY
+        )
         target_compile_definitions(bl2_crypto_config
             INTERFACE
                 CRYPTO_HW_ACCELERATOR

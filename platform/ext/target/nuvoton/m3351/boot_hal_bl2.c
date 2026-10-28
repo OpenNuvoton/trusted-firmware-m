@@ -22,6 +22,8 @@ int flash_device_base(uint8_t fd_id, uintptr_t *ret)
         return -1;
     }
     if (fd_id == FLASH_DEVICE_ID) {
+        /* Secure alias for every slot. With MCUBOOT_HASH_STORAGE_DIRECTLY the
+         * M3351 SHA driver remaps NS-slot pointers to the NS alias. */
         *ret = FLASH_BASE_ADDRESS; /* 0x00000000 (APROM) */
         return 0;
     }
