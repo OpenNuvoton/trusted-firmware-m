@@ -196,6 +196,7 @@ if(M3351_CRYPTO_HW_ACCELERATOR)
             accelerator/m3351_crypto_native.c
             accelerator/m3351_crypto_hash.c
             accelerator/m3351_crypto_cipher.c
+            accelerator/m3351_entropy.c
     )
     target_include_directories(platform_s
         PUBLIC
@@ -225,8 +226,9 @@ if(M3351_CRYPTO_HW_ACCELERATOR)
             PUBLIC
                 CRYPTO_HW_ACCELERATOR
                 PSA_CRYPTO_DRIVER_M3351
-                MCUBOOT_HASH_STORAGE_DIRECTLY
         )
+        # Hash images straight from flash. NS slots (>= SCU->FNSADDR) are read as zero via
+        # the Secure alias; the M3351 SHA driver remaps them to the NS alias (0x10000000).
         target_compile_definitions(bootutil
             PRIVATE
                 MCUBOOT_HASH_STORAGE_DIRECTLY
@@ -235,7 +237,6 @@ if(M3351_CRYPTO_HW_ACCELERATOR)
             INTERFACE
                 CRYPTO_HW_ACCELERATOR
                 PSA_CRYPTO_DRIVER_M3351
-                MCUBOOT_HASH_STORAGE_DIRECTLY
                 TF_PSA_CRYPTO_ACCELERATOR_CONFIG_FILE="${CMAKE_CURRENT_SOURCE_DIR}/accelerator/tf_psa_crypto_extra_config.h"
         )
         target_include_directories(bl2_crypto_config
@@ -330,5 +331,9 @@ install(DIRECTORY   ${TARGET_PLATFORM_PATH}/tests
         DESTINATION ${INSTALL_PLATFORM_NS_DIR})
 
 install(FILES       ${TARGET_PLATFORM_PATH}/tfm_builtin_key_ids.h
+                    ${TARGET_PLATFORM_PATH}/services/include/tfm_platform_hal_ioctl.h
         DESTINATION ${INSTALL_INTERFACE_INC_DIR})
+
+install(FILES       ${TARGET_PLATFORM_PATH}/services/src/tfm_platform_hal_ioctl.c
+        DESTINATION ${INSTALL_INTERFACE_SRC_DIR})
 

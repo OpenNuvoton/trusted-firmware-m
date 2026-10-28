@@ -122,7 +122,19 @@ const struct mpu_armv8m_region_cfg_t region_cfg[] = {
         MPU_ARMV8M_AP_RO_PRIV_UNPRIV,
         MPU_ARMV8M_SH_NONE
     },
-    /* RW, ZI and stack as one region - covering all Secure SRAM */
+    /* Application RoT partition code, linked below TFM_UNPRIV_CODE_START */
+    {
+        0, /* will be updated before using */
+        (uint32_t)&REGION_NAME(Image$$, TFM_APP_CODE_START, $$Base),
+        (uint32_t)&REGION_NAME(Image$$, TFM_APP_CODE_END, $$Base),
+        MPU_ARMV8M_MAIR_ATTR_CODE_IDX,
+        MPU_ARMV8M_XN_EXEC_OK,
+        MPU_ARMV8M_AP_RO_PRIV_UNPRIV,
+        MPU_ARMV8M_SH_NONE
+    },
+    /* RW, ZI and stack as one region - covering all Secure SRAM.
+     * Also covers TFM_SP_META_PTR; a separate overlapping region would fault.
+     */
     {
         0, /* will be updated before using */
         (uint32_t)S_DATA_START,
@@ -132,18 +144,6 @@ const struct mpu_armv8m_region_cfg_t region_cfg[] = {
         MPU_ARMV8M_AP_RW_PRIV_UNPRIV,
         MPU_ARMV8M_SH_NONE
     },
-#ifdef CONFIG_TFM_PARTITION_META
-    /* TFM partition metadata pointer region */
-    {
-        0, /* will be updated before using */
-        (uint32_t)&REGION_NAME(Image$$, TFM_SP_META_PTR, $$ZI$$Base),
-        (uint32_t)&REGION_NAME(Image$$, TFM_SP_META_PTR, $$ZI$$Limit),
-        MPU_ARMV8M_MAIR_ATTR_DATA_IDX,
-        MPU_ARMV8M_XN_EXEC_NEVER,
-        MPU_ARMV8M_AP_RW_PRIV_UNPRIV,
-        MPU_ARMV8M_SH_NONE
-    }
-#endif
 };
 #endif /* TFM_ISOLATION_LEVEL == 3 */
 #endif /* CONFIG_TFM_ENABLE_MEMORY_PROTECT */

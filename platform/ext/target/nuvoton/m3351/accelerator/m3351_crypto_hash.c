@@ -8,6 +8,16 @@
 #include "m3351_crypto_driver.h"
 #include <string.h>
 
+/* The SHA engine keeps one DMA-cascade state; other operations fall back to software */
+static const m3351_hash_operation_t *s_sha_owner;
+
+static void m3351_sha_release(const m3351_hash_operation_t *operation)
+{
+    if (s_sha_owner == operation) {
+        s_sha_owner = NULL;
+    }
+}
+
 static psa_status_t m3351_to_psa_status(int err)
 {
     switch (err) {
@@ -53,8 +63,17 @@ psa_status_t m3351_transparent_hash_setup(
         return PSA_ERROR_NOT_SUPPORTED;
     }
 
+    if (s_sha_owner != NULL && s_sha_owner != operation) {
+        return PSA_ERROR_NOT_SUPPORTED;
+    }
+
     operation->alg = alg;
     int ret = m3351_native_sha_init(&operation->native_ctx, mode);
+    if (ret == M3351_CRYPTO_SUCCESS) {
+        s_sha_owner = operation;
+    } else {
+        m3351_sha_release(operation);
+    }
     return m3351_to_psa_status(ret);
 }
 
@@ -120,6 +139,7 @@ psa_status_t m3351_transparent_hash_finish(
         *hash_length = expected_len;
     }
 
+    m3351_sha_release(operation);
     memset(operation, 0, sizeof(m3351_hash_operation_t));
     return m3351_to_psa_status(ret);
 }
@@ -128,6 +148,7 @@ psa_status_t m3351_transparent_hash_abort(
     m3351_hash_operation_t *operation)
 {
     if (operation != NULL) {
+        m3351_sha_release(operation);
         memset(operation, 0, sizeof(m3351_hash_operation_t));
     }
     return PSA_SUCCESS;
@@ -155,6 +176,10 @@ psa_status_t m3351_transparent_hash_compute(
         mode = SHA_MODE_SHA224;
         expected_len = 28;
     } else {
+        return PSA_ERROR_NOT_SUPPORTED;
+    }
+
+    if (s_sha_owner != NULL) {
         return PSA_ERROR_NOT_SUPPORTED;
     }
 

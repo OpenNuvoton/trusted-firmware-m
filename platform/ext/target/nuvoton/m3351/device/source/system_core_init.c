@@ -32,6 +32,8 @@
 /* cppcheck-suppress misra-c2012-5.5 */
 extern const VECTOR_TABLE_Type __VECTOR_TABLE[FMC_VECMAP_SIZE / 4U];
 
+void Reset_Handler_PreInit(void);
+
 /*----------------------------------------------------------------------------
   System Core Clock Variable
  *----------------------------------------------------------------------------*/
@@ -61,6 +63,12 @@ void SystemCoreClockUpdate(void)
 //__attribute__((constructor))
 void SystemInit(void)
 {
+#if defined(BL2) && !(defined(__ARM_FEATURE_CMSE) && (__ARM_FEATURE_CMSE == 3U))
+    /* BL2 is built without -mcmse, so Reset_Handler() skips Reset_Handler_PreInit();
+     * run it here to switch to PLL 144 MHz. TF-M S (also -DBL2) gets it from Reset_Handler(). */
+    Reset_Handler_PreInit();
+#endif
+
 #if !defined(DOMAIN_NS) || (DOMAIN_NS == 0)
     SYS_UnlockReg();
 #endif
@@ -74,9 +82,7 @@ void SystemInit(void)
 #endif
 
 #if defined(BL2)
-    /* Enable PLL */
-    CLK->PLLCTL ^= CLK_PLLCTL_PD_Msk;
-    CLK->CLKSEL0 = (CLK->CLKSEL0 & ~CLK_CLKSEL0_HCLKSEL_Msk) | CLK_CLKSEL0_HCLKSEL_PLL;
+    /* Core clock (PLL 144 MHz) is set up by Reset_Handler_PreInit(). */
 
     /* Init UART0 to non-secure region */
     SCU_SET_PNSSET(UART0_Attr);
